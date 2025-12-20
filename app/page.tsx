@@ -26,10 +26,15 @@ import {
   TableRow,
   Paper,
   Alert,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
 } from "@mui/material";
 
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import DeleteIcon from "@mui/icons-material/Delete";
+import EditIcon from "@mui/icons-material/Edit";
 import api from "@/lib/api";
 
 import axios from "axios";
@@ -57,6 +62,16 @@ const createTaskSchema = z.object({
   // }),
 });
 
+const updateTaskSchema = z.object({
+  title: z.string().min(3, "Title must be at least 3 characters long"),
+  description: z
+    .string()
+    .min(3, "Description must be at least 3 characters long"),
+  // status: z.nativeEnum(TaskStatus, {
+  //   message: "You must select a valid status",
+  // }),
+});
+
 export default function Home() {
   const { user } = useAuthenticator((context) => [context.user]);
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -73,6 +88,16 @@ export default function Home() {
     description?: string;
     status?: string;
   }>({});
+
+  const [editErrors, setEditErrors] = useState<{
+    title?: string;
+    description?: string;
+    status?: string;
+  }>({});
+
+  // Edit State
+  const [editOpen, setEditOpen] = useState(false);
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
 
   const loadTasks = async () => {
     setLoading(true);
@@ -136,6 +161,58 @@ export default function Home() {
     } catch (error) {
       console.error("Error creating task", error);
       alert("Error creating task.");
+    }
+  };
+
+  // Edit Handlers
+  const handleEditClick = (task: Task) => {
+    setEditingTask(task);
+    setEditOpen(true);
+  };
+
+  const handleCloseEdit = () => {
+    setEditOpen(false);
+    setEditingTask(null);
+  };
+
+  const handleUpdate = async () => {
+    if (!editingTask) return;
+
+    setEditErrors({}); // Clear previous errors
+
+    try {
+      // Create a payload with only the fields we want to update.
+      const { title, description, status } = editingTask;
+      const payload = { title, description, status };
+
+      const result = updateTaskSchema.safeParse(editingTask);
+
+      if (!result.success) {
+        const fieldErrors: any = {};
+        result.error.issues.forEach((issue) => {
+          if (issue.path[0]) {
+            fieldErrors[issue.path[0]] = issue.message;
+          }
+        });
+        setEditErrors(fieldErrors);
+        return;
+      }
+
+      await api.put(`/tasks/${editingTask._id}`, payload);
+      handleCloseEdit();
+      loadTasks();
+    } catch (error) {
+      console.error("Error updating task", error);
+      if (axios.isAxiosError(error) && error.response) {
+        console.error("Server response:", error.response.data);
+        alert(
+          `Failed to update task: ${JSON.stringify(
+            error.response.data.message || error.message
+          )}`
+        );
+      } else {
+        alert("Failed to update task");
+      }
     }
   };
 
@@ -285,6 +362,14 @@ export default function Home() {
                   )}
                 </TableCell>
                 <TableCell align="right">
+                  <IconButton
+                    color="primary"
+                    onClick={() => handleEditClick(task)}
+                    sx={{ mr: 1 }}
+                    title="Edit"
+                  >
+                    <EditIcon />
+                  </IconButton>
                   {task.status !== TaskStatus.DONE && (
                     <IconButton
                       color="success"
@@ -308,6 +393,71 @@ export default function Home() {
           </TableBody>
         </Table>
       </TableContainer>
+
+      {/* Edit Dialog */}
+      <Dialog open={editOpen} onClose={handleCloseEdit} fullWidth maxWidth="sm">
+        <DialogTitle>Edit Task</DialogTitle>
+        <DialogContent>
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 2, mt: 1 }}>
+            <TextField
+              label="Title"
+              value={editingTask?.title || ""}
+              onChange={(e) =>
+                setEditingTask((prev) =>
+                  prev ? { ...prev, title: e.target.value } : null
+                )
+              }
+              fullWidth
+            />
+            {editErrors.title && (
+              <Alert variant="outlined" severity="error">
+                {editErrors.title}
+              </Alert>
+            )}
+            <TextField
+              label="Description"
+              value={editingTask?.description || ""}
+              onChange={(e) =>
+                setEditingTask((prev) =>
+                  prev ? { ...prev, description: e.target.value } : null
+                )
+              }
+              fullWidth
+              multiline
+              rows={3}
+            />
+            {editErrors.description && (
+              <Alert variant="outlined" severity="error">
+                {editErrors.description}
+              </Alert>
+            )}
+            <FormControl fullWidth>
+              <InputLabel>Status</InputLabel>
+              <Select
+                value={editingTask?.status || TaskStatus.PENDING}
+                label="Status"
+                onChange={(e) =>
+                  setEditingTask((prev) =>
+                    prev
+                      ? { ...prev, status: e.target.value as TaskStatus }
+                      : null
+                  )
+                }
+              >
+                <MenuItem value={TaskStatus.PENDING}>Pending</MenuItem>
+                <MenuItem value={TaskStatus.IN_PROGRESS}>In Progress</MenuItem>
+                <MenuItem value={TaskStatus.DONE}>Done</MenuItem>
+              </Select>
+            </FormControl>
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseEdit}>Cancel</Button>
+          <Button variant="contained" onClick={handleUpdate}>
+            Save
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Container>
   );
 }
