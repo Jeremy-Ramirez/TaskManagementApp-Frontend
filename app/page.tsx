@@ -52,9 +52,9 @@ const createTaskSchema = z.object({
   description: z
     .string()
     .min(3, "Description must be at least 3 characters long"),
-  status: z.nativeEnum(TaskStatus, {
-    message: "You must select a valid status",
-  }),
+  // status: z.nativeEnum(TaskStatus, {
+  //   message: "You must select a valid status",
+  // }),
 });
 
 export default function Home() {
