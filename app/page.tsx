@@ -25,6 +25,7 @@ import {
   TableHead,
   TableRow,
   Paper,
+  Alert,
 } from "@mui/material";
 
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
@@ -52,7 +53,7 @@ const createTaskSchema = z.object({
     .string()
     .min(3, "Description must be at least 3 characters long"),
   status: z.nativeEnum(TaskStatus, {
-    errorMap: () => ({ message: "Invalid status" }),
+    message: "You must select a valid status",
   }),
 });
 
@@ -66,6 +67,12 @@ export default function Home() {
     description: "",
     status: TaskStatus.PENDING,
   });
+
+  const [errors, setErrors] = useState<{
+    title?: string;
+    description?: string;
+    status?: string;
+  }>({});
 
   const loadTasks = async () => {
     setLoading(true);
@@ -108,19 +115,27 @@ export default function Home() {
   };
 
   const handleCreate = async () => {
+    setErrors({}); // Clear previous errors
+    const result = createTaskSchema.safeParse(newTask);
+
+    if (!result.success) {
+      const fieldErrors: any = {};
+      result.error.issues.forEach((issue) => {
+        if (issue.path[0]) {
+          fieldErrors[issue.path[0]] = issue.message;
+        }
+      });
+      setErrors(fieldErrors);
+      return;
+    }
+
     try {
-      createTaskSchema.parse(newTask);
       await api.post("/tasks", newTask);
       setNewTask({ title: "", description: "", status: TaskStatus.PENDING });
       loadTasks();
     } catch (error) {
-      if (error instanceof z.ZodError) {
-        const errorMessages = errors.map((err) => err.message).join("\n");
-        alert(`Validation Error:\n${errorMessages}`);
-      } else {
-        console.error("Error creating task", error);
-        alert("Error creating task.");
-      }
+      console.error("Error creating task", error);
+      alert("Error creating task.");
     }
   };
 
@@ -133,48 +148,97 @@ export default function Home() {
       <Box
         sx={{
           display: "flex",
+          flexDirection: "column",
           gap: 2,
           mb: 4,
-          flexWrap: "wrap",
-          alignItems: "center",
         }}
       >
-        <TextField
-          label="Title"
-          value={newTask.title}
-          onChange={(e) => setNewTask({ ...newTask, title: e.target.value })}
-          sx={{ flexGrow: 1 }}
-        />
-        <TextField
-          label="Description"
-          value={newTask.description}
-          onChange={(e) =>
-            setNewTask({ ...newTask, description: e.target.value })
-          }
-          sx={{ flexGrow: 2 }}
-        />
-        <FormControl sx={{ minWidth: 150 }}>
-          <InputLabel>Status</InputLabel>
-          <Select
-            value={newTask.status}
-            label="Status"
-            onChange={(e) =>
-              setNewTask({ ...newTask, status: e.target.value as TaskStatus })
-            }
+        <Box sx={{ display: "flex", gap: 2, flexWrap: "wrap" }}>
+          <Box
+            sx={{
+              flexGrow: 1,
+              display: "flex",
+              flexDirection: "column",
+              gap: 1,
+            }}
           >
-            <MenuItem value={TaskStatus.PENDING}>Pending</MenuItem>
-            <MenuItem value={TaskStatus.IN_PROGRESS}>In Progress</MenuItem>
-            <MenuItem value={TaskStatus.DONE}>Done</MenuItem>
-          </Select>
-        </FormControl>
-        <Button
-          variant="contained"
-          size="large"
-          disabled={loading}
-          onClick={handleCreate}
-        >
-          Add
-        </Button>
+            <TextField
+              label="Title"
+              value={newTask.title}
+              onChange={(e) =>
+                setNewTask({ ...newTask, title: e.target.value })
+              }
+              fullWidth
+            />
+            {errors.title && (
+              <Alert variant="outlined" severity="error">
+                {errors.title}
+              </Alert>
+            )}
+          </Box>
+          <Box
+            sx={{
+              flexGrow: 2,
+              display: "flex",
+              flexDirection: "column",
+              gap: 1,
+            }}
+          >
+            <TextField
+              label="Description"
+              value={newTask.description}
+              onChange={(e) =>
+                setNewTask({ ...newTask, description: e.target.value })
+              }
+              fullWidth
+            />
+            {errors.description && (
+              <Alert variant="outlined" severity="error">
+                {errors.description}
+              </Alert>
+            )}
+          </Box>
+          <Box
+            sx={{
+              minWidth: 150,
+              display: "flex",
+              flexDirection: "column",
+              gap: 1,
+            }}
+          >
+            <FormControl fullWidth>
+              <InputLabel>Status</InputLabel>
+              <Select
+                value={newTask.status}
+                label="Status"
+                onChange={(e) =>
+                  setNewTask({
+                    ...newTask,
+                    status: e.target.value as TaskStatus,
+                  })
+                }
+              >
+                <MenuItem value={TaskStatus.PENDING}>Pending</MenuItem>
+                <MenuItem value={TaskStatus.IN_PROGRESS}>In Progress</MenuItem>
+                <MenuItem value={TaskStatus.DONE}>Done</MenuItem>
+              </Select>
+            </FormControl>
+            {errors.status && (
+              <Alert variant="outlined" severity="error">
+                {errors.status}
+              </Alert>
+            )}
+          </Box>
+          <Button
+            variant="contained"
+            size="large"
+            disabled={loading}
+            onClick={handleCreate}
+            sx={{ height: 56 }}
+          >
+            Add
+          </Button>
+        </Box>
       </Box>
 
       {loading && (
