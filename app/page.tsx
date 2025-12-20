@@ -52,7 +52,7 @@ interface Task {
   status: TaskStatus;
 }
 
-const createTaskSchema = z.object({
+const taskSchema = z.object({
   title: z.string().min(3, "Title must be at least 3 characters long"),
   description: z
     .string()
@@ -62,15 +62,19 @@ const createTaskSchema = z.object({
   // }),
 });
 
-const updateTaskSchema = z.object({
-  title: z.string().min(3, "Title must be at least 3 characters long"),
-  description: z
-    .string()
-    .min(3, "Description must be at least 3 characters long"),
-  // status: z.nativeEnum(TaskStatus, {
-  //   message: "You must select a valid status",
-  // }),
-});
+const validateTask = (data: unknown) => {
+  const result = taskSchema.safeParse(data);
+  if (!result.success) {
+    const fieldErrors: Record<string, string> = {};
+    result.error.issues.forEach((issue) => {
+      if (issue.path[0]) {
+        fieldErrors[issue.path[0].toString()] = issue.message;
+      }
+    });
+    return { isValid: false, errors: fieldErrors };
+  }
+  return { isValid: true, errors: {} };
+};
 
 export default function Home() {
   const { user } = useAuthenticator((context) => [context.user]);
@@ -99,6 +103,9 @@ export default function Home() {
   const [editOpen, setEditOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
 
+  // Loading State for Mark as Done
+  const [markingDoneId, setMarkingDoneId] = useState<string | null>(null);
+
   const loadTasks = async () => {
     setLoading(true);
     try {
@@ -116,6 +123,7 @@ export default function Home() {
   }, []);
 
   const handleMarkAsDone = async (id: string) => {
+    setMarkingDoneId(id);
     try {
       const lambdaUrl = process.env.NEXT_PUBLIC_LAMBDA_DONE_URL;
       if (lambdaUrl) {
@@ -127,6 +135,8 @@ export default function Home() {
     } catch (error) {
       console.error("Error marking as done", error);
       alert("Failed to mark as done");
+    } finally {
+      setMarkingDoneId(null);
     }
   };
 
@@ -141,16 +151,10 @@ export default function Home() {
 
   const handleCreate = async () => {
     setErrors({}); // Clear previous errors
-    const result = createTaskSchema.safeParse(newTask);
+    const { isValid, errors: validationErrors } = validateTask(newTask);
 
-    if (!result.success) {
-      const fieldErrors: any = {};
-      result.error.issues.forEach((issue) => {
-        if (issue.path[0]) {
-          fieldErrors[issue.path[0]] = issue.message;
-        }
-      });
-      setErrors(fieldErrors);
+    if (!isValid) {
+      setErrors(validationErrors);
       return;
     }
 
@@ -185,16 +189,10 @@ export default function Home() {
       const { title, description, status } = editingTask;
       const payload = { title, description, status };
 
-      const result = updateTaskSchema.safeParse(editingTask);
+      const { isValid, errors: validationErrors } = validateTask(payload);
 
-      if (!result.success) {
-        const fieldErrors: any = {};
-        result.error.issues.forEach((issue) => {
-          if (issue.path[0]) {
-            fieldErrors[issue.path[0]] = issue.message;
-          }
-        });
-        setEditErrors(fieldErrors);
+      if (!isValid) {
+        setEditErrors(validationErrors);
         return;
       }
 
@@ -370,16 +368,19 @@ export default function Home() {
                   >
                     <EditIcon />
                   </IconButton>
-                  {task.status !== TaskStatus.DONE && (
-                    <IconButton
-                      color="success"
-                      onClick={() => handleMarkAsDone(task._id)}
-                      sx={{ mr: 1 }}
-                      title="Mark as Done"
-                    >
-                      <CheckCircleIcon />
-                    </IconButton>
-                  )}
+                  {task.status !== TaskStatus.DONE &&
+                    (markingDoneId === task._id ? (
+                      <CircularProgress size={24} sx={{ mr: 1 }} />
+                    ) : (
+                      <IconButton
+                        color="success"
+                        onClick={() => handleMarkAsDone(task._id)}
+                        sx={{ mr: 1 }}
+                        title="Mark as Done"
+                      >
+                        <CheckCircleIcon />
+                      </IconButton>
+                    ))}
                   <IconButton
                     color="error"
                     onClick={() => handleDelete(task._id)}
