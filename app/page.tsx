@@ -2,6 +2,7 @@
 import { useAuthenticator } from "@aws-amplify/ui-react";
 import { useState, useEffect } from "react";
 
+import { z } from "zod";
 import {
   Container,
   Typography,
@@ -12,29 +13,59 @@ import {
   ListItemText,
   IconButton,
   CircularProgress,
+  Box,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Paper,
 } from "@mui/material";
 
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import DeleteIcon from "@mui/icons-material/Delete";
 import api from "@/lib/api";
 
-import { fetchAuthSession } from "aws-amplify/auth";
 import axios from "axios";
+
+export enum TaskStatus {
+  PENDING = "pending",
+  IN_PROGRESS = "in_progress",
+  DONE = "done",
+}
 
 interface Task {
   _id: string;
   title: string;
-  isDone: boolean;
+  description: string;
+  status: TaskStatus;
 }
 
-export default function Home() {
-  //const { user } = useAuthenticator();
-  //console.log(user);
+const createTaskSchema = z.object({
+  title: z.string().min(3, "Title must be at least 3 characters long"),
+  description: z
+    .string()
+    .min(3, "Description must be at least 3 characters long"),
+  status: z.nativeEnum(TaskStatus, {
+    errorMap: () => ({ message: "Invalid status" }),
+  }),
+});
 
+export default function Home() {
+  const { user } = useAuthenticator((context) => [context.user]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const [newTask, setnewTask] = useState("");
+  const [newTask, setNewTask] = useState({
+    title: "",
+    description: "",
+    status: TaskStatus.PENDING,
+  });
 
   const loadTasks = async () => {
     setLoading(true);
@@ -52,52 +83,167 @@ export default function Home() {
     loadTasks();
   }, []);
 
+  const handleMarkAsDone = async (id: string) => {
+    try {
+      const lambdaUrl = process.env.NEXT_PUBLIC_LAMBDA_DONE_URL;
+      if (lambdaUrl) {
+        await axios.post(lambdaUrl, { taskId: id, userId: user?.userId });
+      } else {
+        await api.patch(`/tasks/${id}/done`);
+      }
+      loadTasks();
+    } catch (error) {
+      console.error("Error marking as done", error);
+      alert("Failed to mark as done");
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    try {
+      await api.delete(`/tasks/${id}`);
+      loadTasks();
+    } catch (error) {
+      console.error("Error deleting task", error);
+    }
+  };
+
+  const handleCreate = async () => {
+    try {
+      createTaskSchema.parse(newTask);
+      await api.post("/tasks", newTask);
+      setNewTask({ title: "", description: "", status: TaskStatus.PENDING });
+      loadTasks();
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        const errorMessages = errors.map((err) => err.message).join("\n");
+        alert(`Validation Error:\n${errorMessages}`);
+      } else {
+        console.error("Error creating task", error);
+        alert("Error creating task.");
+      }
+    }
+  };
+
   return (
-    <Container maxWidth="sm" sx={{ mt: 4 }}>
+    <Container maxWidth="lg" sx={{ mt: 4 }}>
       <Typography variant="h4" gutterBottom>
         My Tasks
       </Typography>
 
-      <div style={{ display: "flex", gap: "10px", marginBottom: "20px" }}>
+      <Box
+        sx={{
+          display: "flex",
+          gap: 2,
+          mb: 4,
+          flexWrap: "wrap",
+          alignItems: "center",
+        }}
+      >
         <TextField
-          fullWidth
-          label="New Task"
-          value={newTask}
-          onChange={(e) => setnewTask(e.target.value)}
+          label="Title"
+          value={newTask.title}
+          onChange={(e) => setNewTask({ ...newTask, title: e.target.value })}
+          sx={{ flexGrow: 1 }}
         />
-        <Button variant="contained" disabled={loading}>
+        <TextField
+          label="Description"
+          value={newTask.description}
+          onChange={(e) =>
+            setNewTask({ ...newTask, description: e.target.value })
+          }
+          sx={{ flexGrow: 2 }}
+        />
+        <FormControl sx={{ minWidth: 150 }}>
+          <InputLabel>Status</InputLabel>
+          <Select
+            value={newTask.status}
+            label="Status"
+            onChange={(e) =>
+              setNewTask({ ...newTask, status: e.target.value as TaskStatus })
+            }
+          >
+            <MenuItem value={TaskStatus.PENDING}>Pending</MenuItem>
+            <MenuItem value={TaskStatus.IN_PROGRESS}>In Progress</MenuItem>
+            <MenuItem value={TaskStatus.DONE}>Done</MenuItem>
+          </Select>
+        </FormControl>
+        <Button
+          variant="contained"
+          size="large"
+          disabled={loading}
+          onClick={handleCreate}
+        >
           Add
         </Button>
-      </div>
+      </Box>
 
       {loading && (
         <CircularProgress sx={{ display: "block", margin: "20px auto" }} />
       )}
 
-      <List>
-        {tasks.map((task) => (
-          <ListItem
-            key={task._id}
-            secondaryAction={
-              <>
-                {!task.isDone && (
-                  <IconButton edge="end" color="success">
-                    <CheckCircleIcon />
+      <TableContainer component={Paper}>
+        <Table sx={{ minWidth: 650 }} aria-label="simple table">
+          <TableHead>
+            <TableRow>
+              <TableCell>ID</TableCell>
+              <TableCell>Title</TableCell>
+              <TableCell>Description</TableCell>
+              <TableCell>Status</TableCell>
+              <TableCell align="right">Actions</TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {tasks.map((task) => (
+              <TableRow
+                key={task._id}
+                sx={{ "&:last-child td, &:last-child th": { border: 0 } }}
+              >
+                <TableCell component="th" scope="row">
+                  {task._id}
+                </TableCell>
+                <TableCell>{task.title}</TableCell>
+                <TableCell>{task.description}</TableCell>
+                <TableCell>
+                  {task.status === TaskStatus.DONE ? (
+                    <span
+                      style={{
+                        color: "green",
+                        display: "flex",
+                        alignItems: "center",
+                      }}
+                    >
+                      <CheckCircleIcon fontSize="small" sx={{ mr: 1 }} /> Done
+                    </span>
+                  ) : task.status === TaskStatus.IN_PROGRESS ? (
+                    "In Progress"
+                  ) : (
+                    "Pending"
+                  )}
+                </TableCell>
+                <TableCell align="right">
+                  {task.status !== TaskStatus.DONE && (
+                    <IconButton
+                      color="success"
+                      onClick={() => handleMarkAsDone(task._id)}
+                      sx={{ mr: 1 }}
+                      title="Mark as Done"
+                    >
+                      <CheckCircleIcon />
+                    </IconButton>
+                  )}
+                  <IconButton
+                    color="error"
+                    onClick={() => handleDelete(task._id)}
+                    title="Delete"
+                  >
+                    <DeleteIcon />
                   </IconButton>
-                )}
-                <IconButton edge="end" color="error">
-                  <DeleteIcon />
-                </IconButton>
-              </>
-            }
-          >
-            <ListItemText
-              primary={task.title}
-              sx={{ textDecoration: task.isDone ? "line-through" : "none" }}
-            />
-          </ListItem>
-        ))}
-      </List>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </TableContainer>
     </Container>
   );
 }
