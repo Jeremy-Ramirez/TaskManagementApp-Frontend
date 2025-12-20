@@ -1,80 +1,20 @@
 "use client";
 import { useAuthenticator } from "@aws-amplify/ui-react";
 import { useState, useEffect } from "react";
-
-import { z } from "zod";
+import axios from "axios";
 import {
   Container,
   Typography,
-  TextField,
-  Button,
-  List,
-  ListItem,
-  ListItemText,
-  IconButton,
   CircularProgress,
-  Box,
-  FormControl,
-  InputLabel,
-  Select,
-  MenuItem,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  Paper,
+  Snackbar,
   Alert,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
 } from "@mui/material";
-
-import CheckCircleIcon from "@mui/icons-material/CheckCircle";
-import DeleteIcon from "@mui/icons-material/Delete";
-import EditIcon from "@mui/icons-material/Edit";
 import api from "@/lib/api";
-
-import axios from "axios";
-
-export enum TaskStatus {
-  PENDING = "pending",
-  IN_PROGRESS = "in_progress",
-  DONE = "done",
-}
-
-interface Task {
-  _id: string;
-  title: string;
-  description: string;
-  status: TaskStatus;
-}
-
-const taskSchema = z.object({
-  title: z.string().min(3, "Title must be at least 3 characters long"),
-  description: z
-    .string()
-    .min(3, "Description must be at least 3 characters long"),
-  // status: z.nativeEnum(TaskStatus, {
-  //   message: "You must select a valid status",
-  // }),
-});
-
-const validateTask = (data: unknown) => {
-  const result = taskSchema.safeParse(data);
-  if (!result.success) {
-    const fieldErrors: Record<string, string> = {};
-    result.error.issues.forEach((issue) => {
-      if (issue.path[0]) {
-        fieldErrors[issue.path[0].toString()] = issue.message;
-      }
-    });
-    return { isValid: false, errors: fieldErrors };
-  }
-  return { isValid: true, errors: {} };
-};
+import { Task, TaskStatus } from "@/types/task";
+import { validateTask } from "@/lib/validation";
+import CreateTaskForm from "@/app/components/CreateTaskForm";
+import EditTaskDialog from "@/app/components/EditTaskDialog";
+import TaskTable from "@/app/components/TaskTable";
 
 export default function Home() {
   const { user } = useAuthenticator((context) => [context.user]);
@@ -106,6 +46,25 @@ export default function Home() {
   // Loading State for Mark as Done
   const [markingDoneId, setMarkingDoneId] = useState<string | null>(null);
 
+  // Notification State
+  const [notification, setNotification] = useState<{
+    open: boolean;
+    message: string;
+    severity: "success" | "error";
+  }>({
+    open: false,
+    message: "",
+    severity: "success",
+  });
+
+  const handleCloseNotification = () => {
+    setNotification((prev) => ({ ...prev, open: false }));
+  };
+
+  const showNotification = (message: string, severity: "success" | "error") => {
+    setNotification({ open: true, message, severity });
+  };
+
   const loadTasks = async () => {
     setLoading(true);
     try {
@@ -132,9 +91,10 @@ export default function Home() {
         await api.patch(`/tasks/${id}/done`);
       }
       loadTasks();
+      showNotification("Task marked as done successfully", "success");
     } catch (error) {
       console.error("Error marking as done", error);
-      alert("Failed to mark as done");
+      showNotification("Failed to mark as done", "error");
     } finally {
       setMarkingDoneId(null);
     }
@@ -144,8 +104,10 @@ export default function Home() {
     try {
       await api.delete(`/tasks/${id}`);
       loadTasks();
+      showNotification("Task deleted successfully", "success");
     } catch (error) {
       console.error("Error deleting task", error);
+      showNotification("Failed to delete task", "error");
     }
   };
 
@@ -162,9 +124,10 @@ export default function Home() {
       await api.post("/tasks", newTask);
       setNewTask({ title: "", description: "", status: TaskStatus.PENDING });
       loadTasks();
+      showNotification("Task created successfully", "success");
     } catch (error) {
       console.error("Error creating task", error);
-      alert("Error creating task.");
+      showNotification("Error creating task", "error");
     }
   };
 
@@ -199,17 +162,19 @@ export default function Home() {
       await api.put(`/tasks/${editingTask._id}`, payload);
       handleCloseEdit();
       loadTasks();
+      showNotification("Task updated successfully", "success");
     } catch (error) {
       console.error("Error updating task", error);
       if (axios.isAxiosError(error) && error.response) {
         console.error("Server response:", error.response.data);
-        alert(
-          `Failed to update task: ${JSON.stringify(
+        showNotification(
+          `Failed to update task: ${
             error.response.data.message || error.message
-          )}`
+          }`,
+          "error"
         );
       } else {
-        alert("Failed to update task");
+        showNotification("Failed to update task", "error");
       }
     }
   };
@@ -220,245 +185,52 @@ export default function Home() {
         My Tasks
       </Typography>
 
-      <Box
-        sx={{
-          display: "flex",
-          flexDirection: "column",
-          gap: 2,
-          mb: 4,
-        }}
-      >
-        <Box sx={{ display: "flex", gap: 2, flexWrap: "wrap" }}>
-          <Box
-            sx={{
-              flexGrow: 1,
-              display: "flex",
-              flexDirection: "column",
-              gap: 1,
-            }}
-          >
-            <TextField
-              label="Title"
-              value={newTask.title}
-              onChange={(e) =>
-                setNewTask({ ...newTask, title: e.target.value })
-              }
-              fullWidth
-            />
-            {errors.title && (
-              <Alert variant="outlined" severity="error">
-                {errors.title}
-              </Alert>
-            )}
-          </Box>
-          <Box
-            sx={{
-              flexGrow: 2,
-              display: "flex",
-              flexDirection: "column",
-              gap: 1,
-            }}
-          >
-            <TextField
-              label="Description"
-              value={newTask.description}
-              onChange={(e) =>
-                setNewTask({ ...newTask, description: e.target.value })
-              }
-              fullWidth
-            />
-            {errors.description && (
-              <Alert variant="outlined" severity="error">
-                {errors.description}
-              </Alert>
-            )}
-          </Box>
-          <Box
-            sx={{
-              minWidth: 150,
-              display: "flex",
-              flexDirection: "column",
-              gap: 1,
-            }}
-          >
-            <FormControl fullWidth>
-              <InputLabel>Status</InputLabel>
-              <Select
-                value={newTask.status}
-                label="Status"
-                onChange={(e) =>
-                  setNewTask({
-                    ...newTask,
-                    status: e.target.value as TaskStatus,
-                  })
-                }
-              >
-                <MenuItem value={TaskStatus.PENDING}>Pending</MenuItem>
-                <MenuItem value={TaskStatus.IN_PROGRESS}>In Progress</MenuItem>
-                <MenuItem value={TaskStatus.DONE}>Done</MenuItem>
-              </Select>
-            </FormControl>
-            {errors.status && (
-              <Alert variant="outlined" severity="error">
-                {errors.status}
-              </Alert>
-            )}
-          </Box>
-          <Button
-            variant="contained"
-            size="large"
-            disabled={loading}
-            onClick={handleCreate}
-            sx={{ height: 56 }}
-          >
-            Add
-          </Button>
-        </Box>
-      </Box>
+      <CreateTaskForm
+        newTask={newTask}
+        errors={errors}
+        loading={loading}
+        onChange={(field, value) => setNewTask({ ...newTask, [field]: value })}
+        onSubmit={handleCreate}
+      />
 
       {loading && (
         <CircularProgress sx={{ display: "block", margin: "20px auto" }} />
       )}
 
-      <TableContainer component={Paper}>
-        <Table sx={{ minWidth: 650 }} aria-label="simple table">
-          <TableHead>
-            <TableRow>
-              <TableCell>ID</TableCell>
-              <TableCell>Title</TableCell>
-              <TableCell>Description</TableCell>
-              <TableCell>Status</TableCell>
-              <TableCell align="right">Actions</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {tasks.map((task) => (
-              <TableRow
-                key={task._id}
-                sx={{ "&:last-child td, &:last-child th": { border: 0 } }}
-              >
-                <TableCell component="th" scope="row">
-                  {task._id}
-                </TableCell>
-                <TableCell>{task.title}</TableCell>
-                <TableCell>{task.description}</TableCell>
-                <TableCell>
-                  {task.status === TaskStatus.DONE ? (
-                    <span
-                      style={{
-                        color: "green",
-                        display: "flex",
-                        alignItems: "center",
-                      }}
-                    >
-                      <CheckCircleIcon fontSize="small" sx={{ mr: 1 }} /> Done
-                    </span>
-                  ) : task.status === TaskStatus.IN_PROGRESS ? (
-                    "In Progress"
-                  ) : (
-                    "Pending"
-                  )}
-                </TableCell>
-                <TableCell align="right">
-                  <IconButton
-                    color="primary"
-                    onClick={() => handleEditClick(task)}
-                    sx={{ mr: 1 }}
-                    title="Edit"
-                  >
-                    <EditIcon />
-                  </IconButton>
-                  {task.status !== TaskStatus.DONE &&
-                    (markingDoneId === task._id ? (
-                      <CircularProgress size={24} sx={{ mr: 1 }} />
-                    ) : (
-                      <IconButton
-                        color="success"
-                        onClick={() => handleMarkAsDone(task._id)}
-                        sx={{ mr: 1 }}
-                        title="Mark as Done"
-                      >
-                        <CheckCircleIcon />
-                      </IconButton>
-                    ))}
-                  <IconButton
-                    color="error"
-                    onClick={() => handleDelete(task._id)}
-                    title="Delete"
-                  >
-                    <DeleteIcon />
-                  </IconButton>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </TableContainer>
+      <TaskTable
+        tasks={tasks}
+        markingDoneId={markingDoneId}
+        onEdit={handleEditClick}
+        onMarkAsDone={handleMarkAsDone}
+        onDelete={handleDelete}
+      />
 
-      {/* Edit Dialog */}
-      <Dialog open={editOpen} onClose={handleCloseEdit} fullWidth maxWidth="sm">
-        <DialogTitle>Edit Task</DialogTitle>
-        <DialogContent>
-          <Box sx={{ display: "flex", flexDirection: "column", gap: 2, mt: 1 }}>
-            <TextField
-              label="Title"
-              value={editingTask?.title || ""}
-              onChange={(e) =>
-                setEditingTask((prev) =>
-                  prev ? { ...prev, title: e.target.value } : null
-                )
-              }
-              fullWidth
-            />
-            {editErrors.title && (
-              <Alert variant="outlined" severity="error">
-                {editErrors.title}
-              </Alert>
-            )}
-            <TextField
-              label="Description"
-              value={editingTask?.description || ""}
-              onChange={(e) =>
-                setEditingTask((prev) =>
-                  prev ? { ...prev, description: e.target.value } : null
-                )
-              }
-              fullWidth
-              multiline
-              rows={3}
-            />
-            {editErrors.description && (
-              <Alert variant="outlined" severity="error">
-                {editErrors.description}
-              </Alert>
-            )}
-            <FormControl fullWidth>
-              <InputLabel>Status</InputLabel>
-              <Select
-                value={editingTask?.status || TaskStatus.PENDING}
-                label="Status"
-                onChange={(e) =>
-                  setEditingTask((prev) =>
-                    prev
-                      ? { ...prev, status: e.target.value as TaskStatus }
-                      : null
-                  )
-                }
-              >
-                <MenuItem value={TaskStatus.PENDING}>Pending</MenuItem>
-                <MenuItem value={TaskStatus.IN_PROGRESS}>In Progress</MenuItem>
-                <MenuItem value={TaskStatus.DONE}>Done</MenuItem>
-              </Select>
-            </FormControl>
-          </Box>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={handleCloseEdit}>Cancel</Button>
-          <Button variant="contained" onClick={handleUpdate}>
-            Save
-          </Button>
-        </DialogActions>
-      </Dialog>
+      <EditTaskDialog
+        open={editOpen}
+        task={editingTask}
+        errors={editErrors}
+        onClose={handleCloseEdit}
+        onSave={handleUpdate}
+        onChange={(field, value) =>
+          setEditingTask((prev) => (prev ? { ...prev, [field]: value } : null))
+        }
+      />
+
+      {/* Global Notification Snackbar */}
+      <Snackbar
+        open={notification.open}
+        autoHideDuration={6000}
+        onClose={handleCloseNotification}
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+      >
+        <Alert
+          onClose={handleCloseNotification}
+          severity={notification.severity}
+          sx={{ width: "100%" }}
+        >
+          {notification.message}
+        </Alert>
+      </Snackbar>
     </Container>
   );
 }
