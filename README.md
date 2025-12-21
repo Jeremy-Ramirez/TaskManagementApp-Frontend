@@ -69,7 +69,7 @@ cypress/                # E2E Tests
     ```
 
 3.  Configure Environment Variables:
-    Create a `.env.local` file in the root directory:
+    Create a `.env` file in the root directory:
 
     ```env
     NEXT_PUBLIC_API_URL=http://localhost:3001
