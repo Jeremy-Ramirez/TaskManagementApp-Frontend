@@ -1,6 +1,6 @@
-# Insightt Frontend (Task Management)
+Frontend (Task Management)
 
-This is the frontend application for the **Insightt Task Management System**, built as part of a Technical Test for a Full Stack JavaScript Programmer position.
+This is the frontend application for a **Task Management System**, 
 
 It connects to a NestJS backend services and AWS Cloud resources to provide a secure and robust task management experience.
 
